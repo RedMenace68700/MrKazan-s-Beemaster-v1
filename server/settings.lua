@@ -28,6 +28,8 @@ settings.DEFINITIONS = {
     help = "Breed more drones of a parent species first when only one pure drone is left" },
   { key = "QuestMode", type = "bool", default = false,
     help = "Never take bees out of the provider chests" },
+  { key = "TimeZone", type = "int", min = -12, max = 14, default = 0,
+    help = "Hours to add to UTC for the times in the log, e.g. 1 for Central Europe" },
 }
 
 local BY_KEY = {}

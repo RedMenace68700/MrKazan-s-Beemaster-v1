@@ -72,12 +72,35 @@ function main.run(root, data)
     filesystem.rename(log_path, log_path .. ".old")
   end
 
-  local ui = terminal.new(term, computer)
-  local LEVEL_COLORS = { WARN = YELLOW, ERROR = RED }
-  local log = log_module.new({ path = log_path, echo = function(line, level) ui:print(line, LEVEL_COLORS[level]) end })
-
   local cfg = config_module.new(persist.load(path("config.dat")))
   local settings = settings_module.new(persist.load(path("settings.dat")))
+
+  -- os.time/os.date run on game time. The real time comes from the modification time
+  -- of a freshly written file, then advances with computer.uptime (real seconds).
+  local function real_clock()
+    local stamp = path(".clock")
+    local file = io.open(stamp, "w")
+    if not file then return nil end
+    file:write("x")
+    file:close()
+    local modified = filesystem.lastModified(stamp)
+    filesystem.remove(stamp)
+    if type(modified) ~= "number" or modified <= 0 then return nil end
+    if modified > 1e11 then modified = modified / 1000 end -- milliseconds
+    local start_real, start_uptime = modified, computer.uptime()
+    return function()
+      local t = math.floor(start_real + computer.uptime() - start_uptime + settings:get("TimeZone") * 3600) % 86400
+      return string.format("%02d:%02d:%02d", math.floor(t / 3600), math.floor(t / 60) % 60, t % 60)
+    end
+  end
+
+  local ui = terminal.new(term, computer)
+  local LEVEL_COLORS = { WARN = YELLOW, ERROR = RED }
+  local log = log_module.new({
+    path = log_path,
+    clock = real_clock(),
+    echo = function(line, level) ui:print(line, LEVEL_COLORS[level]) end,
+  })
   local queue = queue_module.new(persist.load(path("queue.dat")))
   local saved_layout = persist.load(path("layout.dat"))
   local state = {
