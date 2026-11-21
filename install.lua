@@ -6,7 +6,7 @@
 local component = require("component")
 local filesystem = require("filesystem")
 
-local REPO = "https://raw.githubusercontent.com/RedMenace68700/MrKazan-s-Beemaster-v1/main/"
+local GITHUB_REPO = "RedMenace68700/MrKazan-s-Beemaster-v1"
 local ROOT = "/home/beemasterv1/"
 local LAUNCHER = "/home/bin/beemasterv1.lua"
 local SHRC = "/home/.shrc"
@@ -60,8 +60,9 @@ local internet = require("internet")
 local function download(url)
   local ok, result = pcall(function()
     local parts = {}
-    -- the changing query avoids old copies from GitHub's cache
-    for chunk in internet.request(url .. "?t=" .. math.random(1, 1e9)) do parts[#parts + 1] = chunk end
+    for chunk in internet.request(url, nil, { ["User-Agent"] = "beemasterv1-installer" }) do
+      parts[#parts + 1] = chunk
+    end
     return table.concat(parts)
   end)
   if not ok then return nil, tostring(result) end
@@ -69,13 +70,30 @@ local function download(url)
   return result
 end
 
--- An older installer does not know newer files: always run the newest one from GitHub.
-if (...) ~= "--fresh" then
-  local text = download(REPO .. "install.lua")
+-- GitHub keeps copies of files under ".../main/..." for a few minutes after a push.
+-- All files are therefore loaded from one fixed commit, which is never out of date.
+local function newest_commit()
+  local text = download("https://api.github.com/repos/" .. GITHUB_REPO .. "/commits/main")
+  return text and text:match('"sha"%s*:%s*"(%x+)"')
+end
+
+local args = table.pack(...)
+local ref = args[2]
+if args[1] ~= "--fresh" then
+  ref = newest_commit()
+  if ref then
+    print("Newest version: commit " .. ref:sub(1, 7))
+  else
+    print("Cannot ask GitHub for the newest commit, using 'main'")
+    ref = "main"
+  end
+  -- An older installer does not know newer files: always run the installer of that commit.
+  local text = download("https://raw.githubusercontent.com/" .. GITHUB_REPO .. "/" .. ref .. "/install.lua")
   local newest = text and load(text, "=install.lua")
-  if newest then return newest("--fresh") end
+  if newest then return newest("--fresh", ref) end
   print("Cannot load the newest installer, using this one")
 end
+local REPO = "https://raw.githubusercontent.com/" .. GITHUB_REPO .. "/" .. (ref or "main") .. "/"
 
 local function write(path, text)
   filesystem.makeDirectory(filesystem.path(path))
