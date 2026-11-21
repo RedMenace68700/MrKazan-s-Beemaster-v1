@@ -24,7 +24,11 @@ function replies.error(reply, context)
   elseif code == "ROBOT_TRANSFER_FAILED" then
     args = { info.reason }
   elseif code == "ROBOT_INTERNAL" then
-    args = { info.text }
+    -- first line on screen; the full traceback goes to the log file (detail)
+    local text = tostring(info.text or "?")
+    local err = errors.new(code, info.command or context.command or "?", text:match("[^\n]*"))
+    if text:find("\n", 1, true) then err.detail = text end
+    return err
   elseif code == "ROBOT_UNKNOWN_COMMAND" then
     args = { info.name }
   elseif code == "ROBOT_BAD_ARGS" then

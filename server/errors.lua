@@ -58,7 +58,7 @@ errors.CODES = {
   ROBOT_MISMATCH = "Slot %s holds %s, expected %s",
   ROBOT_CHEST_FULL = "Chest %s is full",
   ROBOT_FULL = "The robot's inventory is full",
-  ROBOT_INTERNAL = "Robot error: %s",
+  ROBOT_INTERNAL = "Robot error in '%s': %s",
   PROTO_BAD_MESSAGE = "Unreadable message from %s",
 }
 

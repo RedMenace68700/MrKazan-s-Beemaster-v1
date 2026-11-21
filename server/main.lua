@@ -266,7 +266,7 @@ function main.run(root, data)
     elseif ev.type == "boot_failed" then
       log:error("Cannot build the robot program: " .. tostring(ev.error))
     elseif ev.type == "crash" then
-      local message = errors.format("ROBOT_INTERNAL", ev.text:match("[^\n]*"))
+      local message = errors.format("ROBOT_INTERNAL", "robot program", ev.text:match("[^\n]*"))
       log:error(message)
       log:detail(ev.text)
       ui:alert("ERROR: " .. message)
@@ -278,6 +278,7 @@ function main.run(root, data)
       local result = done.result or {}
       for _, line in ipairs(result.lines or {}) do log:info(line) end
       if result.traceback then log:detail(result.traceback) end
+      if result.error and result.error.detail then log:detail(result.error.detail) end
       if result.error and result.alert then log:error(result.error.msg) end
       if result.alert then
         ui:alert(result.alert)

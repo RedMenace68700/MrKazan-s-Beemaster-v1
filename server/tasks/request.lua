@@ -47,7 +47,7 @@ end
 
 -- The request's products: everything the robot carries except honey.
 local function products(ctx)
-  local honey = ctx.config.honey_slot
+  local honey = breeding.honey_slot(ctx)
   local carry = {}
   for slot, bee in pairs(ctx.state.carry) do
     if slot ~= honey then carry[slot] = bee end

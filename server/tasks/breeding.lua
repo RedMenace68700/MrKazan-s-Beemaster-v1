@@ -2,7 +2,7 @@
 -- taking bees out of chests, storing them, honey, the apiary cycle and analysis.
 --
 -- The server keeps track of what the robot carries in ctx.state.carry (slot -> summary);
--- read_robot() refreshes it from the robot. The honey slot (config.honey_slot) only
+-- read_robot() refreshes it from the robot. The honey slot (see honey_slot) only
 -- ever holds honey drops.
 --
 -- All functions return a result or nil plus an error object.
@@ -24,6 +24,13 @@ local function station(id)
   return grid.position(id)
 end
 
+-- The robot slot that holds honey: config.honey_slot if set (> 0), else the robot's last slot.
+function breeding.honey_slot(ctx)
+  local configured = ctx.config.honey_slot
+  if configured and configured > 0 then return configured end
+  return ctx.state.robot_size or 16
+end
+
 -- Reads the robot inventory into ctx.state.carry.
 function breeding.read_robot(ctx)
   local reply = ctx.call("inventory")
@@ -34,7 +41,7 @@ function breeding.read_robot(ctx)
 end
 
 function breeding.free_robot_slot(ctx)
-  local honey = ctx.config.honey_slot
+  local honey = breeding.honey_slot(ctx)
   for slot = 1, ctx.state.robot_size or 16 do
     if slot ~= honey and ctx.state.carry[slot] == nil then return slot end
   end
@@ -142,7 +149,7 @@ end
 
 -- Stores everything the robot carries (except honey) in the supply chests.
 function breeding.stash(ctx)
-  local honey = ctx.config.honey_slot
+  local honey = breeding.honey_slot(ctx)
   local slots = {}
   for slot in pairs(ctx.state.carry) do
     if slot ~= honey then slots[#slots + 1] = slot end
@@ -197,7 +204,7 @@ end
 -- Makes sure the robot carries at least `need` honey drops, refilling from the honey chest.
 -- Fails with HONEY_LOW when robot and honey chest together hold less than MinHoney.
 function breeding.ensure_honey(ctx, need)
-  local honey_slot = ctx.config.honey_slot
+  local honey_slot = breeding.honey_slot(ctx)
   local held = ctx.state.carry[honey_slot]
   local have = held and held.name == bees.ITEM.honey and held.size or 0
   if held and held.name ~= bees.ITEM.honey then
@@ -246,7 +253,7 @@ function breeding.analyze(ctx, slots)
   if #todo == 0 then return true end
   local ok, err = breeding.ensure_honey(ctx, #todo)
   if not ok then return nil, err end
-  local honey_slot = ctx.config.honey_slot
+  local honey_slot = breeding.honey_slot(ctx)
   for _, slot in ipairs(todo) do
     local reply = ctx.call("analyze", { slot = slot, honey = honey_slot })
     if not reply.ok then return nil, replies.error(reply) end

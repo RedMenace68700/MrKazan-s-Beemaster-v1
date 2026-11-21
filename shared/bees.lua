@@ -2,8 +2,8 @@
 --
 -- summarize() turns a full stack table into a small summary. The robot sends only
 -- summaries to the server, and the server keeps only summaries in its inventory:
---   { name, size, kind = "princess"|"drone"|"queen", species, inactive,
---     analyzed, natural, generation }
+--   { name, size, kind = "princess"|"drone"|"queen", species, uid, inactive,
+--     inactive_uid, analyzed, natural, generation }
 -- Non-bee items keep only name and size.
 
 local bees = {}
@@ -37,6 +37,15 @@ local function species_name(chromosomes)
   return nil
 end
 
+-- Internal species id, e.g. "forestry.speciesDiligent". Different mods may use the same
+-- species name; the id tells them apart.
+local function species_uid(chromosomes)
+  if type(chromosomes) == "table" and type(chromosomes.species) == "table" then
+    return chromosomes.species.uid
+  end
+  return nil
+end
+
 local function species_from_label(label, kind)
   if type(label) ~= "string" then return nil end
   local suffix = LABEL_SUFFIX[kind]
@@ -61,8 +70,10 @@ function bees.summarize(stack)
   summary.species = species_name(individual.active)
     or species_from_label(stack.label, kind)
     or individual.displayName
+  summary.uid = species_uid(individual.active)
   if summary.analyzed then
     summary.inactive = species_name(individual.inactive)
+    summary.inactive_uid = species_uid(individual.inactive)
   end
   return summary
 end
@@ -75,6 +86,7 @@ end
 function bees.purity(summary)
   if type(summary) ~= "table" or not summary.kind then return nil end
   if not summary.analyzed or not summary.inactive or not summary.species then return nil end
+  if summary.uid and summary.inactive_uid then return summary.uid == summary.inactive_uid end
   return bees.same_species(summary.species, summary.inactive)
 end
 

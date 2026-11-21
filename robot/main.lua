@@ -306,8 +306,9 @@ end
 function Robot:execute(cmd)
   local handler = HANDLERS[cmd.name]
   if not handler then return protocol.reply_error(cmd.id, "ROBOT_UNKNOWN_COMMAND", { name = cmd.name }) end
-  local ok, good, data, info = pcall(handler, self, cmd.args or {})
-  if not ok then return protocol.reply_error(cmd.id, "ROBOT_INTERNAL", { text = tostring(good) }) end
+  local traceback = debug and debug.traceback or tostring
+  local ok, good, data, info = xpcall(handler, traceback, self, cmd.args or {})
+  if not ok then return protocol.reply_error(cmd.id, "ROBOT_INTERNAL", { text = tostring(good), command = cmd.name }) end
   if good then return protocol.reply_ok(cmd.id, data) end
   return protocol.reply_error(cmd.id, data, info)
 end
