@@ -125,60 +125,91 @@ local function stock_up(s, species)
   return nil
 end
 
--- Rule 6: fresh pure princess of one parent x pure drone of the other.
+-- A parent drone for a mutation from stock: a pure one (DroneSafetyMode keeps the last),
+-- else a hybrid carrying the species. Unread drones are looked at first, they may be pure.
+-- Returns source, "pure"/"hybrid" or nil, "analyze"/"safety"/"missing".
+local function parent_drone(s, species)
+  local status = drone_status(s, species)
+  if status == "ok" then return { species = species }, "pure" end
+  if status == "analyze" then return nil, "analyze" end
+  if s.stock("drone", species).carriers > 0 then return { carrier = species }, "hybrid" end
+  return nil, status
+end
+
+-- A parent princess from stock: a pure one, else a hybrid carrying the species.
+-- Returns source, "pure"/"hybrid", number of pure ones, or nil, "analyze"/"missing".
+local function parent_princess(s, species)
+  local status, count = princess_status(s, species)
+  if status == "ok" then return { species = species }, "pure", count end
+  if status == "analyze" then return nil, "analyze", 0 end
+  if s.stock("princess", species).carriers > 0 then return { carrier = species }, "hybrid", 0 end
+  return nil, "missing", 0
+end
+
+-- Rule 6: a fresh princess of one parent x a drone of the other. Pure bees mutate twice
+-- as often as hybrids, so pure ones come first; hybrids carrying the parent species are
+-- the fallback when pure ones are missing or protected.
 local function fresh_pair(s)
   local options = { { s.a, s.b } }
   if not same(s.a, s.b) then options[2] = { s.b, s.a } end
   for _, o in ipairs(options) do
-    o.p_status, o.p_count = princess_status(s, o[1])
-    o.d_status = drone_status(s, o[2])
+    o.princess, o.p_kind, o.p_count = parent_princess(s, o[1])
+    o.drone, o.d_kind = parent_drone(s, o[2])
+    o.score = (o.p_kind == "pure" and 2 or 0) + (o.d_kind == "pure" and 2 or 0) + o.p_count / 1000
   end
   local best
   for _, o in ipairs(options) do
-    if o.p_status == "ok" and o.d_status == "ok" and (not best or o.p_count > best.p_count) then best = o end
+    if o.princess and o.drone and (not best or o.score > best.score) then best = o end
   end
   if best then
-    return { action = "cross", princess = { species = best[1] }, drone = { species = best[2] },
-             note = "mutation with a fresh " .. best[1] .. " princess" }
+    local note = "mutation with a fresh " .. best[1] .. " princess"
+    if best.p_kind == "hybrid" then note = "mutation with a hybrid princess carrying " .. best[1] end
+    if best.d_kind == "hybrid" then note = note .. " and a hybrid drone carrying " .. best[2] end
+    return { action = "cross", princess = best.princess, drone = best.drone, note = note }
   end
   for _, o in ipairs(options) do
-    if o.p_status == "analyze" then return { action = "analyze", kind = "princess", species = o[1] } end
-    if o.p_status == "ok" and o.d_status == "analyze" then return { action = "analyze", kind = "drone", species = o[2] } end
+    if o.p_kind == "analyze" then return { action = "analyze", kind = "princess", species = o[1] } end
+    if o.princess and o.d_kind == "analyze" then return { action = "analyze", kind = "drone", species = o[2] } end
   end
   for _, o in ipairs(options) do
-    if o.p_status == "ok" and o.d_status == "safety" then
+    if o.princess and o.d_kind == "safety" then
       local step = stock_up(s, o[2])
       if step then return step end
     end
   end
   for _, o in ipairs(options) do
-    if o.p_status == "ok" then return drone_failure(o.d_status, o[2]) end
+    if o.princess then return drone_failure(o.d_kind, o[2]) end
   end
   return missing_princess(s, s.a)
 end
 
--- Rule 5: a princess with the parent drone that completes the mutation pair.
+-- Rule 5: a princess with the parent drone that completes the mutation pair
+-- (pure drones first, then hybrids carrying the species).
 local function working_pair(s, slot, bee)
-  local wanted = {}
-  if carries(bee, s.a) then wanted[#wanted + 1] = s.b end
-  if carries(bee, s.b) and not same(s.a, s.b) then wanted[#wanted + 1] = s.a end
   local options = {}
-  for _, species in ipairs(wanted) do
-    local status, count = drone_status(s, species)
-    options[#options + 1] = { species = species, status = status, count = count }
+  local function consider(species)
+    local source, kind = parent_drone(s, species)
+    options[#options + 1] = { species = species, source = source, kind = kind,
+                              count = s.stock("drone", species).pure }
   end
-  table.sort(options, function(x, y) return x.count > y.count end)
+  if carries(bee, s.a) then consider(s.b) end
+  if carries(bee, s.b) and not same(s.a, s.b) then consider(s.a) end
+  table.sort(options, function(x, y)
+    if (x.kind == "pure") ~= (y.kind == "pure") then return x.kind == "pure" end
+    return x.count > y.count
+  end)
   for _, o in ipairs(options) do
-    if o.status == "ok" then
-      return { action = "cross", princess = { slot = slot }, drone = { species = o.species },
-               note = "mutation with the working princess" }
+    if o.source then
+      local note = "mutation with the working princess"
+      if o.kind == "hybrid" then note = note .. " and a hybrid drone carrying " .. o.species end
+      return { action = "cross", princess = { slot = slot }, drone = o.source, note = note }
     end
   end
   for _, o in ipairs(options) do
-    if o.status == "analyze" then return { action = "analyze", kind = "drone", species = o.species } end
+    if o.kind == "analyze" then return { action = "analyze", kind = "drone", species = o.species } end
   end
   for _, o in ipairs(options) do
-    if o.status == "safety" then
+    if o.kind == "safety" then
       local step = stock_up(s, o.species)
       if step then return step end
     end
