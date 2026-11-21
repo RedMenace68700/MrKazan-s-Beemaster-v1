@@ -19,7 +19,7 @@ console.PROMPT = "Please input your desired requests (e.g. Clay + Diligent = Tin
 
 local ACTIONS = {
   go = true, stop = true, status = true, setup = true,
-  inventorysetup = true, selftest = true, dump = true, quit = true,
+  inventorysetup = true, selftest = true, cycle = true, dump = true, quit = true,
 }
 
 local function show_queue(ctx)
@@ -45,9 +45,9 @@ local function show_settings(ctx)
 end
 
 local function show_help()
-  local lines = { string.format("%-22s %s", "A + B = C", "Add a request to the queue") }
+  local lines = { string.format("%-31s %s", "A + B = C", "Add a request to the queue") }
   for _, command in ipairs(parser.COMMANDS) do
-    lines[#lines + 1] = string.format("%-22s %s", command.usage or command.name, command.help)
+    lines[#lines + 1] = string.format("%-31s %s", command.usage or command.name, command.help)
   end
   return lines
 end

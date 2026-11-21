@@ -21,6 +21,8 @@ local bundle = require("server.bundle")
 local motion = require("server.motion")
 local terminal = require("server.terminal")
 local setup_task = require("server.tasks.setup")
+local cycle_task = require("server.tasks.cycle")
+local run_task = require("server.tasks.run")
 local diag = require("server.tasks.diag")
 
 local main = {}
@@ -145,9 +147,11 @@ function main.run(root, data)
     log = log,
     state = state,
     settings = settings,
+    config = cfg,
     queue = queue,
     save = save,
     clock = os.time,
+    now = computer.uptime,
   }
   local console_ctx = {
     species = registry, queue = queue, settings = settings,
@@ -183,6 +187,16 @@ function main.run(root, data)
 
   local running = true
 
+  -- "5/1", "3" -> { id = "5/1", slot = 3 } for a chest position, or nil
+  local function chest_slot(id, slot_text)
+    local position = grid.position(id)
+    local slot = tonumber(slot_text)
+    if not position or position.role == "apiary" or not slot or slot < 1 or slot ~= math.floor(slot) then
+      return nil
+    end
+    return { id = id, slot = math.floor(slot) }
+  end
+
   local function handle_line(line)
     local result = console.handle(console_ctx, line)
     for _, text in ipairs(result.lines) do ui:print(text, result.error and RED or nil) end
@@ -204,16 +218,27 @@ function main.run(root, data)
       end
     elseif action == "status" then
       show_status()
+    elseif action == "go" then
+      start("go", run_task.run, ctx)
     elseif action == "setup" then
       start("setup", setup_task.run, ctx, {})
     elseif action == "inventorysetup" then
       start("inventorysetup", setup_task.run, ctx, { scan = true })
+    elseif action == "cycle" then
+      local princess = chest_slot(result.args[1], result.args[2])
+      local drone = chest_slot(result.args[3], result.args[4])
+      if not (princess and drone) then
+        ui:print(errors.format("INPUT_USAGE", "cycle <position> <slot> <position> <slot>, e.g. cycle 2/1 1 2/1 2"), RED)
+        return
+      end
+      start("cycle", cycle_task.run, ctx, princess, drone)
     elseif action == "dump" then
-      local id, slot = result.args[1], tonumber(result.args[2])
-      if not grid.position(id) or not slot or slot < 1 or slot ~= math.floor(slot) then
+      local at = chest_slot(result.args[1], result.args[2])
+      if not at then
         ui:print(errors.format("INPUT_USAGE", "dump <position> <slot>, e.g. dump 5/1 3"), RED)
         return
       end
+      local id, slot = at.id, at.slot
       start("dump", diag.dump, ctx, id, slot, function(text)
         local file = io.open(path("dump.txt"), "a")
         if file then
@@ -253,7 +278,10 @@ function main.run(root, data)
       local result = done.result or {}
       for _, line in ipairs(result.lines or {}) do log:info(line) end
       if result.traceback then log:detail(result.traceback) end
-      if result.stopped then
+      if result.error and result.alert then log:error(result.error.msg) end
+      if result.alert then
+        ui:alert(result.alert)
+      elseif result.stopped then
         ui:alert("DONE: " .. done.name .. " stopped")
       elseif result.ok then
         if not result.quiet then ui:alert("DONE: " .. done.name) end

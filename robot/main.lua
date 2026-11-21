@@ -174,16 +174,26 @@ function HANDLERS.fetch(self, args)
   local summary = bees.summarize(stack)
   local expect = args.expect or {}
   if (expect.name and summary.name ~= expect.name)
-    or (expect.species and not bees.same_species(summary.species, expect.species)) then
+    or (expect.species and not bees.same_species(summary.species, expect.species))
+    or (expect.inactive and not bees.same_species(summary.inactive, expect.inactive)) then
     return false, "ROBOT_MISMATCH", { slot = args.slot, found = summary }
   end
-  if robot.count(args.into) > 0 then return false, "ROBOT_SLOT_BUSY", { slot = args.into } end
+  -- the target slot must be empty, or hold the same item (topping up honey)
+  local before = robot.count(args.into)
+  if before > 0 then
+    local held = ic.getStackInInternalSlot(args.into)
+    if not held or held.name ~= stack.name then return false, "ROBOT_SLOT_BUSY", { slot = args.into } end
+  end
   robot.select(args.into)
   local wanted = math.min(args.count or stack.size, stack.size)
   ic.suckFromSlot(SIDE_FRONT, args.slot, wanted)
-  local moved = robot.count(args.into)
-  if moved == 0 then return false, "ROBOT_TRANSFER_FAILED", { slot = args.slot, reason = "nothing taken" } end
-  return true, { moved = moved, left = bees.summarize(ic.getStackInSlot(SIDE_FRONT, args.slot)) }
+  local moved = robot.count(args.into) - before
+  if moved <= 0 then return false, "ROBOT_TRANSFER_FAILED", { slot = args.slot, reason = "nothing taken" } end
+  return true, {
+    moved = moved,
+    left = bees.summarize(ic.getStackInSlot(SIDE_FRONT, args.slot)),
+    got = bees.summarize(ic.getStackInInternalSlot(args.into)),
+  }
 end
 
 function HANDLERS.put(self, args)
@@ -212,6 +222,73 @@ function HANDLERS.put(self, args)
     slot = target,
     stack = bees.summarize(ic.getStackInSlot(SIDE_FRONT, target)),
     left = robot.count(args.from),
+  }
+end
+
+-- Puts a bee from a robot slot into the apiary: a princess (or queen) into the queen
+-- slot, exactly one drone into the drone slot. side is absolute (4 = west).
+-- Whatever was in that apiary slot before comes back into the robot slot ("back").
+function HANDLERS.insert(self, args)
+  local hw = self.hw
+  if not hw.beekeeper then return false, "ROBOT_COMPONENT_MISSING", { name = "beekeeper upgrade" } end
+  if type(args.from) ~= "number" or type(args.side) ~= "number" then return false, "ROBOT_BAD_ARGS", {} end
+  local item = hw.ic.getStackInInternalSlot(args.from)
+  if not item then return false, "ROBOT_EMPTY_SLOT", { slot = args.from } end
+  local summary = bees.summarize(item)
+  local queen_slot = args.kind == "princess" or args.kind == "queen"
+  local expect = args.expect or {}
+  if summary.kind ~= args.kind or (expect.species and not bees.same_species(summary.species, expect.species)) then
+    return false, "ROBOT_MISMATCH", { slot = args.from, found = summary }
+  end
+  if not queen_slot and item.size ~= 1 then
+    return false, "ROBOT_BAD_ARGS", { reason = "exactly one drone", size = item.size }
+  end
+  hw.robot.select(args.from)
+  local ok, reason
+  if queen_slot then
+    ok, reason = hw.beekeeper.swapQueen(args.side)
+  else
+    ok, reason = hw.beekeeper.swapDrone(args.side)
+  end
+  local back = bees.summarize(hw.ic.getStackInInternalSlot(args.from))
+  if not ok then
+    return false, "ROBOT_TRANSFER_FAILED", { reason = tostring(reason or "swap refused"), back = back }
+  end
+  return true, { back = back }
+end
+
+-- Analyzes the bee in a robot slot, paying with honey from honey_slot.
+function HANDLERS.analyze(self, args)
+  local hw = self.hw
+  if not hw.beekeeper then return false, "ROBOT_COMPONENT_MISSING", { name = "beekeeper upgrade" } end
+  local item = hw.ic.getStackInInternalSlot(args.slot)
+  if not item then return false, "ROBOT_EMPTY_SLOT", { slot = args.slot } end
+  if not bees.kind(item.name) then return false, "ROBOT_MISMATCH", { slot = args.slot, found = bees.summarize(item) } end
+  hw.robot.select(args.slot)
+  local ok, reason = hw.beekeeper.analyze(args.honey)
+  if not ok then
+    if tostring(reason):lower():find("honey", 1, true) then return false, "NO_HONEY", {} end
+    return false, "ROBOT_TRANSFER_FAILED", { reason = tostring(reason) }
+  end
+  return true, { bee = bees.summarize(hw.ic.getStackInInternalSlot(args.slot)), honey = hw.robot.count(args.honey) }
+end
+
+-- Moves count items from one robot slot into an empty one (e.g. one drone off a stack).
+function HANDLERS.split(self, args)
+  local robot = self.hw.robot
+  if type(args.from) ~= "number" or type(args.to) ~= "number" or type(args.count) ~= "number" then
+    return false, "ROBOT_BAD_ARGS", {}
+  end
+  if robot.count(args.from) < args.count then return false, "ROBOT_EMPTY_SLOT", { slot = args.from } end
+  if robot.count(args.to) > 0 then return false, "ROBOT_SLOT_BUSY", { slot = args.to } end
+  robot.select(args.from)
+  if not robot.transferTo(args.to, args.count) then
+    return false, "ROBOT_TRANSFER_FAILED", { reason = "transfer refused" }
+  end
+  local ic = self.hw.ic
+  return true, {
+    from = bees.summarize(ic.getStackInInternalSlot(args.from)),
+    to = bees.summarize(ic.getStackInInternalSlot(args.to)),
   }
 end
 

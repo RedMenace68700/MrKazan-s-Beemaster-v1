@@ -31,6 +31,9 @@ errors.CODES = {
   OUTPUT_FULL = "Output chest has only %s free slots (MinFreeOutputSlots is %s)",
   SUPPLY_FULL = "All supply chests are full",
   PROVIDER_FULL = "All provider chests are full",
+  INVENTORY_MISSING = "No inventory yet, run 'inventorysetup'",
+  APIARY_BUSY = "The apiary is still working (%s inside)",
+  NOT_A_BEE = "Slot %s of %s holds no %s",
 
   -- server
   SERVER_ALREADY_RUNNING = "beemasterv1 is already running on this computer",
@@ -54,6 +57,7 @@ errors.CODES = {
   ROBOT_SLOT_BUSY = "Slot %s is already occupied",
   ROBOT_MISMATCH = "Slot %s holds %s, expected %s",
   ROBOT_CHEST_FULL = "Chest %s is full",
+  ROBOT_FULL = "The robot's inventory is full",
   ROBOT_INTERNAL = "Robot error: %s",
   PROTO_BAD_MESSAGE = "Unreadable message from %s",
 }
