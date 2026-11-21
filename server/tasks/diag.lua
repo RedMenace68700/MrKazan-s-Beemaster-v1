@@ -8,9 +8,28 @@ local replies = require("server.replies")
 
 local diag = {}
 
+-- 'stop': whatever the robot carries goes back into the supply chests (honey stays),
+-- then it returns to the charger.
+function diag.tidy(ctx)
+  local breeding = require("server.tasks.breeding")
+  local ok, err = breeding.read_robot(ctx)
+  if ok and ctx.state.layout and ctx.state.layout.complete then
+    breeding.phase(ctx, "storing what the robot carries")
+    ok, err = breeding.stash(ctx)
+  end
+  if ok then
+    breeding.phase(ctx, "returning to the charger")
+    ok, err = motion.home(ctx)
+  end
+  ctx.save("inventory")
+  if not ok then return { ok = false, error = err } end
+  return { ok = true, alert = "DONE: stopped, robot emptied and back at the charger" }
+end
+
 function diag.status(ctx)
   local reply = ctx.call("status")
   if not reply.ok then return { ok = false, error = replies.error(reply), quiet = true } end
+  ctx.state.robot_status = reply.data
   local d = reply.data
   local percent = d.max_energy and d.max_energy > 0 and math.floor(d.energy / d.max_energy * 100) or 0
   return {

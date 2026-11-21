@@ -18,7 +18,7 @@ local console = {}
 console.PROMPT = "Please input your desired requests (e.g. Clay + Diligent = Tin), 'help' for commands"
 
 local ACTIONS = {
-  go = true, stop = true, status = true, setup = true,
+  go = true, pause = true, stop = true, status = true, setup = true,
   inventorysetup = true, selftest = true, cycle = true, dump = true, quit = true,
 }
 

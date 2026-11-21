@@ -174,6 +174,7 @@ function request.run(ctx, entry)
   local name = queue.describe(entry)
   local cycles, looks = 0, 0
 
+  ctx.state.progress = { request = "#" .. entry.id .. " " .. name, cycle = 0, max = max_cycles, note = "preparing" }
   local ok, err = breeding.ensure_honey(ctx, 1)
   if not ok then return { status = "halt", error = err } end
 
@@ -208,6 +209,7 @@ function request.run(ctx, entry)
       cycles = cycles + 1
       local note = step.action == "stock" and ("AutoStocking: more " .. step.species .. " drones") or step.note
       ctx.log:info(string.format("%s: cycle %d, %s", name, cycles, note))
+      ctx.state.progress = { request = "#" .. entry.id .. " " .. name, cycle = cycles, max = max_cycles, note = note }
       local done
       done, err = cross(ctx, entry, step)
       if done == false then

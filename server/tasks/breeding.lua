@@ -183,20 +183,36 @@ function breeding.split(ctx, from, count)
   return to
 end
 
--- Sends the robot home to charge when its energy is low, and waits until it is full.
-function breeding.charge(ctx)
+-- Records what the current task is doing, for 'status'.
+function breeding.phase(ctx, text)
+  ctx.state.progress = ctx.state.progress or {}
+  ctx.state.progress.phase = text
+  ctx.state.progress.since = ctx.now()
+end
+
+-- Asks the robot for its status and remembers it for 'status'.
+function breeding.robot_status(ctx)
   local reply = ctx.call("status")
   if not reply.ok then return nil, replies.error(reply) end
-  local d = reply.data
+  ctx.state.robot_status = reply.data
+  return reply.data
+end
+
+-- Sends the robot home to charge when its energy is low, and waits until it is full.
+function breeding.charge(ctx)
+  local d, err = breeding.robot_status(ctx)
+  if not d then return nil, err end
   if not d.max_energy or d.max_energy <= 0 or d.energy / d.max_energy >= 0.25 then return true end
   ctx.log:info(string.format("Energy at %d%%, charging at home", math.floor(d.energy / d.max_energy * 100)))
-  local ok, err = motion.home(ctx)
+  breeding.phase(ctx, "charging at home")
+  local ok
+  ok, err = motion.home(ctx)
   if not ok then return nil, err end
   for _ = 1, 60 do
     ctx.sleep(15)
-    reply = ctx.call("status")
-    if not reply.ok then return nil, replies.error(reply) end
-    if reply.data.energy / reply.data.max_energy >= 0.95 then return true end
+    d, err = breeding.robot_status(ctx)
+    if not d then return nil, err end
+    if d.energy / d.max_energy >= 0.95 then return true end
   end
   return true
 end
@@ -213,6 +229,7 @@ function breeding.ensure_honey(ctx, need)
   if have >= need and have >= HONEY_REFILL_BELOW then return true end
 
   local id = ctx.state.layout.honey
+  breeding.phase(ctx, "fetching honey")
   local ok, err = motion.go(ctx, station(id))
   if not ok then return nil, err end
   local reply = ctx.call("scan")
@@ -237,7 +254,9 @@ function breeding.ensure_honey(ctx, need)
                                     expect = { name = bees.ITEM.honey } })
     if not got.ok then return nil, replies.error(got, { at = id }) end
     have = have + got.data.moved
+    in_chest = in_chest - got.data.moved
   end
+  ctx.state.honey_chest = in_chest
   ctx.state.carry[honey_slot] = { name = bees.ITEM.honey, size = have }
   if have < need then return nil, errors.new("HONEY_LOW", have, min_honey) end
   return true
@@ -319,6 +338,7 @@ end
 -- and analyze the offspring. Returns the robot slots of the offspring.
 function breeding.cross(ctx, princess_slot, drone_slot)
   local id = ctx.state.layout.output
+  breeding.phase(ctx, "checking the output chest")
   local ok, err = motion.go(ctx, station(id))
   if not ok then return nil, err end
   local reply = ctx.call("scan")
@@ -338,10 +358,12 @@ function breeding.cross(ctx, princess_slot, drone_slot)
   if free < min_free then return nil, errors.new("OUTPUT_FULL", free, min_free) end
 
   local timeout = ctx.settings:get("CycleTimeout")
+  breeding.phase(ctx, "putting the bees into the apiary")
   ok, err = breeding.insert(ctx, princess_slot, "princess")
   if not ok and err.code == "APIARY_BUSY" then
     -- something is still working in the apiary (e.g. after a restart): let it finish
     ctx.log:warn(err.msg .. "; waiting for it to finish")
+    breeding.phase(ctx, "waiting for the apiary to finish an old cycle")
     local scan
     scan, err = breeding.wait_offspring(ctx, timeout)
     if not scan then return nil, err end
@@ -356,9 +378,11 @@ function breeding.cross(ctx, princess_slot, drone_slot)
   ok, err = breeding.insert(ctx, drone_slot, "drone")
   if not ok then return nil, err end
 
+  breeding.phase(ctx, "waiting for the offspring")
   local scan
   scan, err = breeding.wait_offspring(ctx, timeout)
   if not scan then return nil, err end
+  breeding.phase(ctx, "collecting and analyzing the offspring")
   local slots
   slots, err = breeding.collect(ctx, scan)
   if not slots then return nil, err end

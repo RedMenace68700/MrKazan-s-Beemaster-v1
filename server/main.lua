@@ -24,6 +24,7 @@ local setup_task = require("server.tasks.setup")
 local cycle_task = require("server.tasks.cycle")
 local run_task = require("server.tasks.run")
 local diag = require("server.tasks.diag")
+local breeding = require("server.tasks.breeding")
 
 local main = {}
 
@@ -151,7 +152,8 @@ function main.run(root, data)
     queue = queue,
     save = save,
     clock = os.time,
-    now = computer.uptime,
+    -- durations inside tasks leave out the time spent paused
+    now = function() return runner:active_time() end,
   }
   local console_ctx = {
     species = registry, queue = queue, settings = settings,
@@ -172,17 +174,61 @@ function main.run(root, data)
   end
 
   local function show_status()
+    local robot_text = "not connected"
+    if link:connected() then
+      local rs = state.robot_status
+      local energy = ""
+      if rs and rs.max_energy and rs.max_energy > 0 then
+        energy = string.format(", energy %d%%", math.floor(rs.energy / rs.max_energy * 100))
+      end
+      local carried = 0
+      for _, item in pairs(state.carry or {}) do
+        if item.kind then carried = carried + (item.size or 1) end
+      end
+      robot_text = string.format("connected (%s), %s%s, carrying %d bee(s)",
+        link.robot:sub(1, 8), motion.describe(state.pos), energy, carried)
+    end
+    ui:print("Robot:     " .. robot_text)
+
+    local task = runner:current()
+    ui:print("Task:      " .. (task and (task .. " (" .. runner:state() .. ")") or "idle"))
+    local p = state.progress
+    if task and p then
+      if p.request then
+        ui:print(string.format("Request:   %s, cycle %d/%d: %s", p.request, p.cycle or 0, p.max or 0, p.note or ""))
+      end
+      if p.phase then
+        ui:print(string.format("Step:      %s (%d s)", p.phase, math.floor(runner:active_time() - (p.since or 0))))
+      end
+    end
+
+    local entries = queue:list()
+    local names = {}
+    for i = 1, math.min(3, #entries) do names[i] = "#" .. entries[i].id .. " " .. queue_module.describe(entries[i]) end
+    if #entries > 3 then names[#names + 1] = "..." end
+    ui:print(string.format("Queue:     %d request(s)%s", #entries, #names > 0 and (": " .. table.concat(names, "; ")) or ""))
+
+    local held = state.carry and state.carry[breeding.honey_slot(ctx)]
+    local in_robot = held and held.name == "Forestry:honeyDrop" and held.size or 0
+    ui:print(string.format("Honey:     %d in the robot, %s in the honey chest", in_robot,
+      state.honey_chest and tostring(state.honey_chest) or "?"))
+
     local chests = 0
     for _ in pairs(state.ledger.chests) do chests = chests + 1 end
     local layout_text = "none, run 'setup'"
     if state.layout then layout_text = state.layout.complete and "complete" or "incomplete, run 'setup'" end
-    ui:print("Robot:     " .. (link:connected() and ("connected (" .. link.robot:sub(1, 8) .. ")") or "not connected"))
-    ui:print("Position:  " .. motion.describe(state.pos))
-    ui:print("Layout:    " .. layout_text)
-    ui:print(string.format("Inventory: %d chest(s) scanned", chests))
-    ui:print(string.format("Queue:     %d request(s)", queue:size()))
-    ui:print("Task:      " .. (runner:current() or "idle"))
+    ui:print(string.format("Layout:    %s; inventory of %d chest(s)", layout_text, chests))
     if link:connected() and not runner:busy() then runner:start("status", diag.status, ctx) end
+  end
+
+  -- 'stop' while idle, or after an aborted task: empty the robot and send it home.
+  local function tidy_up()
+    if not link:connected() then
+      ui:print(errors.format("ROBOT_NOT_CONNECTED"), RED)
+      return
+    end
+    log:info("Storing what the robot carries and returning to the charger")
+    runner:start("stop", diag.tidy, ctx)
   end
 
   local running = true
@@ -210,16 +256,32 @@ function main.run(root, data)
         running = false
       end
     elseif action == "stop" then
-      if runner:busy() then
-        runner:request_stop()
-        ui:print("Stopping after the current step ...")
+      if runner:current() == "stop" then
+        ui:print("Already stopping")
+      elseif runner:busy() then
+        log:info("Stopping " .. runner:current() .. " after the robot's current command")
+        runner:abort()
+      else
+        tidy_up()
+      end
+    elseif action == "pause" then
+      if runner:state() == "running" then
+        runner:pause()
+        log:info("Pausing " .. runner:current() .. " before the robot's next command, 'go' continues")
+      elseif runner:state() == "paused" then
+        ui:print("Already paused, 'go' continues")
       else
         ui:print("The robot is idle")
       end
     elseif action == "status" then
       show_status()
     elseif action == "go" then
-      start("go", run_task.run, ctx)
+      if runner:state() == "paused" then
+        runner:unpause()
+        log:info("Continuing " .. runner:current())
+      else
+        start("go", run_task.run, ctx)
+      end
     elseif action == "setup" then
       start("setup", setup_task.run, ctx, {})
     elseif action == "inventorysetup" then
@@ -276,6 +338,8 @@ function main.run(root, data)
   local function report_finished()
     for _, done in ipairs(runner:take_finished()) do
       local result = done.result or {}
+      state.progress = nil
+      if result.aborted then tidy_up() end
       for _, line in ipairs(result.lines or {}) do log:info(line) end
       if result.traceback then log:detail(result.traceback) end
       if result.error and result.error.detail then log:detail(result.error.detail) end

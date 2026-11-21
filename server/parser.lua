@@ -12,9 +12,10 @@ local parser = {}
 
 -- Console commands, in the order 'help' lists them.
 parser.COMMANDS = {
-  { name = "go", args = 0, help = "Start or continue working on the queue" },
-  { name = "stop", args = 0, help = "Finish the current step, tidy up and return home" },
-  { name = "status", args = 0, help = "Show the current request, step and robot state" },
+  { name = "go", args = 0, help = "Start working on the queue, or continue after 'pause'" },
+  { name = "pause", args = 0, help = "Hold the robot before its next command; 'go' continues" },
+  { name = "stop", args = 0, help = "Abort at once: store all bees from the robot, return to the charger" },
+  { name = "status", args = 0, help = "Show the current request, step, queue, honey and robot" },
   { name = "queue", args = 0, help = "List the queued requests" },
   { name = "clear", args = 0, help = "Remove all queued requests (not while one is running)" },
   { name = "settings", args = 0, help = "Show all settings" },
