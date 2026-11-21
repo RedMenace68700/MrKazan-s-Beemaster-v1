@@ -60,12 +60,21 @@ local internet = require("internet")
 local function download(url)
   local ok, result = pcall(function()
     local parts = {}
-    for chunk in internet.request(url) do parts[#parts + 1] = chunk end
+    -- the changing query avoids old copies from GitHub's cache
+    for chunk in internet.request(url .. "?t=" .. math.random(1, 1e9)) do parts[#parts + 1] = chunk end
     return table.concat(parts)
   end)
   if not ok then return nil, tostring(result) end
   if result == "" or result:sub(1, 3) == "404" then return nil, "not found" end
   return result
+end
+
+-- An older installer does not know newer files: always run the newest one from GitHub.
+if (...) ~= "--fresh" then
+  local text = download(REPO .. "install.lua")
+  local newest = text and load(text, "=install.lua")
+  if newest then return newest("--fresh") end
+  print("Cannot load the newest installer, using this one")
 end
 
 local function write(path, text)
