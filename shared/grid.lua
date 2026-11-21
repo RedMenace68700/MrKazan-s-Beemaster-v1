@@ -21,6 +21,14 @@ grid.DIRECTIONS = {
 -- Fixed order so paths are always the same.
 local DIRECTION_ORDER = { "north", "south", "west", "east" }
 
+local DIRECTION_BY_SIDE = {}
+for name, d in pairs(grid.DIRECTIONS) do DIRECTION_BY_SIDE[d.side] = name end
+
+-- "north" for side 2 and so on; nil for up/down or unknown sides.
+function grid.direction_of_side(side)
+  return DIRECTION_BY_SIDE[side]
+end
+
 -- Home: the charger on field 6.
 grid.HOME = { x = 2, y = 2, h = 1 }
 

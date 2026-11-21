@@ -22,6 +22,7 @@ parser.COMMANDS = {
   { name = "setup", args = 0, help = "Let the robot check which chests and machines are present" },
   { name = "inventorysetup", args = 0, help = "Run setup and scan every chest into the inventory" },
   { name = "selftest", args = 0, help = "Let the robot test reachability without changing anything" },
+  { name = "dump", args = 2, usage = "dump <position> <slot>", help = "Save the full data of one chest slot to data/dump.txt, e.g. dump 5/1 3" },
   { name = "help", args = 0, help = "Show this list" },
   { name = "quit", args = 0, help = "Stop the server program" },
 }

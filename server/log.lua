@@ -42,6 +42,16 @@ function Logger:info(text) return self:write("INFO", text) end
 function Logger:warn(text) return self:write("WARN", text) end
 function Logger:error(text) return self:write("ERROR", text) end
 
+-- Long texts such as tracebacks: written to the log file only.
+function Logger:detail(text)
+  if not self.path then return end
+  local file = io.open(self.path, "a")
+  if file then
+    file:write("    ", tostring(text):gsub("\n", "\n    "), "\n")
+    file:close()
+  end
+end
+
 -- Robot events carry the id of the command they belong to.
 function Logger:event(id, text)
   return self:write("ROBOT", "#" .. tostring(id) .. " " .. text)

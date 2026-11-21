@@ -9,7 +9,7 @@ config.DEFAULTS = {
   port = protocol.DEFAULT_PORT,      -- wireless port shared with the robot
   honey_slot = 48,                   -- robot slot that always holds honey drops
   robot_timeout = 5,                 -- seconds to wait for a reply before sending again
-  robot_retries = 3,                 -- resends before the robot counts as lost
+  robot_retries = 6,                 -- resends before the robot counts as lost
   output_check_interval = 5,         -- seconds between output chest checks during a cycle
   chunk_size = protocol.CHUNK_SIZE,  -- bytes per network packet
 }

@@ -12,7 +12,8 @@ errors.CODES = {
   INPUT_USAGE = "Usage: %s",
   SETTING_UNKNOWN = "Unknown setting '%s' (type 'settings')",
   SETTING_BAD_VALUE = "Invalid value '%s' for %s (allowed: %s)",
-  QUEUE_BUSY = "Cannot %s while a request is running",
+  QUEUE_BUSY = "Cannot %s while the robot is busy",
+  NOT_AVAILABLE = "'%s' is not available yet",
 
   -- setup
   SETUP_NO_LAYOUT = "No layout found, run 'setup' first",
@@ -31,9 +32,20 @@ errors.CODES = {
   SUPPLY_FULL = "All supply chests are full",
   PROVIDER_FULL = "All provider chests are full",
 
+  -- server
+  SERVER_ALREADY_RUNNING = "beemasterv1 is already running on this computer",
+  SERVER_NO_MODEM = "No wireless network card found",
+  SERVER_INTERNAL = "Server error: %s",
+
   -- robot and network
+  ROBOT_NOT_CONNECTED = "No robot connected (start or reboot the robot)",
   ROBOT_TIMEOUT = "Robot did not answer command #%s (%s)",
   ROBOT_VERSION = "Robot runs version %s, server expects %s",
+  ROBOT_RESTARTED = "Robot restarted during command #%s (%s)",
+  ROBOT_STALE_ID = "Robot already ran command #%s",
+  ROBOT_COMPONENT_MISSING = "Robot is missing: %s",
+  ROBOT_LOST = "Robot is at %s, expected %s",
+  ROBOT_TRANSFER_FAILED = "Moving items failed (%s)",
   ROBOT_UNKNOWN_COMMAND = "Robot does not know command '%s'",
   ROBOT_BAD_ARGS = "Invalid arguments for robot command '%s'",
   ROBOT_BLOCKED = "Robot cannot move (%s)",

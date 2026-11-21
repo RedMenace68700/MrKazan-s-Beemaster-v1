@@ -65,8 +65,13 @@ function protocol.decode(text)
   return msg
 end
 
-function protocol.hello(version)
-  return { kind = "hello", version = version }
+-- extra: optional table of additional fields (components, nav, ...)
+function protocol.hello(version, extra)
+  local msg = { kind = "hello", version = version }
+  for key, value in pairs(extra or {}) do
+    if msg[key] == nil then msg[key] = value end
+  end
+  return msg
 end
 
 function protocol.welcome(version, accepted)

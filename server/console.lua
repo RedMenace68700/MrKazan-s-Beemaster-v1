@@ -19,7 +19,7 @@ console.PROMPT = "Please input your desired requests (e.g. Clay + Diligent = Tin
 
 local ACTIONS = {
   go = true, stop = true, status = true, setup = true,
-  inventorysetup = true, selftest = true, quit = true,
+  inventorysetup = true, selftest = true, dump = true, quit = true,
 }
 
 local function show_queue(ctx)
@@ -66,7 +66,7 @@ function console.handle(ctx, line)
   end
 
   local name = parsed.name
-  if ACTIONS[name] then return { lines = {}, action = name } end
+  if ACTIONS[name] then return { lines = {}, action = name, args = parsed.args } end
 
   if name == "queue" then
     return { lines = show_queue(ctx) }
