@@ -22,6 +22,7 @@ parser.COMMANDS = {
   { name = "set", args = 2, usage = "set <Setting> <value>", help = "Change a setting, e.g. set ResultMode extra_spares" },
   { name = "setup", args = 0, help = "Let the robot check which chests and machines are present" },
   { name = "inventorysetup", args = 0, help = "Run setup and scan every chest into the inventory" },
+  { name = "scanall", args = 0, help = "Analyze every unanalyzed bee in the chests (1 honey per stack)" },
   { name = "selftest", args = 0, help = "Let the robot test reachability without changing anything" },
   { name = "cycle", args = 4, usage = "cycle <pos> <slot> <pos> <slot>",
     help = "Breed once with the princess and drone in these slots, e.g. cycle 2/1 1 2/1 2" },

@@ -1,29 +1,40 @@
 -- Decides the next step of a request A + B = C. Pure logic on a snapshot, no robot.
 --
--- The products of a request (its working princess, pure C princesses, pure C drones)
--- stay in the robot until they are delivered; everything else goes back into the chests.
+-- How Forestry breeds: the mutation is rolled separately for the princess's side and the
+-- drone's side of each offspring. One mutated side gives a hybrid that carries C (X/C);
+-- a pure C bee needs both sides. So hybrids carrying C come far more often than pure C
+-- bees, and the fastest way to a pure C pair is to cross C carriers with each other:
+--   X/C x pure C -> 1/2 pure C,  X/C x X/C -> 1/4 pure C,  mutating again -> about p*p.
+--
+-- The products of a request (its princesses and the drones carrying C) stay in the robot
+-- until they are delivered; everything else goes back into the chests.
 --
 -- snapshot = {
 --   a, b, c,                        species of the request
 --   carry = { [slot] = summary },   products the robot carries (honey excluded)
---   stock(kind, species) -> { pure = n, unknown = n, providers = n }
---                                   bees in the allowed chests: known pure, not yet
---                                   analyzed, and (QuestMode) pure ones only in providers
+--   stock(kind, species) -> { pure = n, unknown = n, carriers = n, providers = n }
+--       in the allowed chests: known pure, not yet analyzed, carrying the species but not
+--       known pure (hybrids, or unread bees showing it as active species), and
+--       (QuestMode) pure ones only in the provider chests
 --   need_drones,                    1 (single_pair) or SpareDrones (extra_spares)
 --   drone_safety, auto_stocking, quest_mode
 -- }
 --
--- Steps (the first rule that applies wins):
---   1 { action = "deliver", princess = slot, drones = { slot, ... } }  target reached
---   2 C x C: a pure C princess with a pure C drone (carried, else from stock)
---   3 a pure C princess but no pure C drone anywhere: keep her, mutate with another princess
---   4 recovery: no pure C princess, but pure C drones: working princess x C drone
---   5 mutation: working princess x the parent drone she is missing
---   6 mutation: fresh pure parent princess from stock x pure drone of the other parent
--- Other steps:
+-- Rules (the first that applies wins):
+--   1 target reached: deliver
+--   2 a pure C princess: x pure C drone (C x C), else analyze unread C drones, else
+--     x drone carrying C (half the offspring pure C)
+--   3 the best princess carrying C (carried, else a hybrid from stock) x the best drone
+--     carrying C (pure before hybrid)
+--   4 a princess without C x the best drone carrying C (her offspring then carry C)
+--   5 no C drone anywhere: mutation, working princess x the parent drone she is missing
+--   6 mutation with a fresh pure parent princess from stock
+-- Steps:
+--   { action = "deliver", princess = slot, drones = { slot, ... } }
 --   { action = "cross", princess = source, drone = source, note = text }
---       source = { slot = n } (carried) or { species = "X" } (pure one from stock)
---   { action = "analyze", kind = "princess"|"drone", species = "X" }  look at unread bees first
+--       source = { slot = n } (carried), { species = "X" } (pure one from stock),
+--                { carrier = "X" } (one from stock carrying X, not known pure)
+--   { action = "analyze", kind = "princess"|"drone", species = "X" }
 --   { action = "stock", species = "X" }   AutoStocking: breed X x X for more drones
 --   { action = "fail", code = "MISSING_PRINCESS"|..., species = "X" }
 
@@ -43,25 +54,37 @@ local function pure_of(bee, species)
   return bees.purity(bee) == true and same(bee.species, species)
 end
 
--- Sorts the carried products. The working princess is the newest princess that is not
--- pure C (highest generation).
+-- Sorts the carried products:
+--   pure_princesses   pure C princesses
+--   c_princess        newest princess carrying C (not pure)
+--   working           newest princess without C
+--   c_drones          pure C drones, c_drone_count their number
+--   hybrid_drones     drones carrying C, not pure
 function planner.products(snapshot)
-  local p = { pure_princesses = {}, working = nil, c_drones = {}, c_drone_count = 0 }
+  local p = { pure_princesses = {}, c_drones = {}, c_drone_count = 0, hybrid_drones = {} }
   local slots = {}
   for slot in pairs(snapshot.carry) do slots[#slots + 1] = slot end
   table.sort(slots)
-  local working_generation = -1
+  local generation = {}
+  local function newest(field, slot, bee)
+    local g = bee.generation or 0
+    if not p[field] or g > generation[field] then p[field], generation[field] = slot, g end
+  end
   for _, slot in ipairs(slots) do
     local bee = snapshot.carry[slot]
     if bee.kind == "princess" then
       if pure_of(bee, snapshot.c) then
         p.pure_princesses[#p.pure_princesses + 1] = slot
-      elseif (bee.generation or 0) > working_generation then
-        p.working, working_generation = slot, bee.generation or 0
+      elseif carries(bee, snapshot.c) then
+        newest("c_princess", slot, bee)
+      else
+        newest("working", slot, bee)
       end
     elseif bee.kind == "drone" and pure_of(bee, snapshot.c) then
       p.c_drones[#p.c_drones + 1] = slot
       p.c_drone_count = p.c_drone_count + (bee.size or 1)
+    elseif bee.kind == "drone" and carries(bee, snapshot.c) then
+      p.hybrid_drones[#p.hybrid_drones + 1] = slot
     end
   end
   return p
@@ -95,7 +118,6 @@ local function drone_failure(status, species)
   return { action = "fail", code = "MISSING_DRONE", species = species }
 end
 
--- What to do when only the last pure drone of a species is left.
 local function stock_up(s, species)
   if s.auto_stocking and princess_status(s, species) == "ok" then
     return { action = "stock", species = species }
@@ -135,7 +157,7 @@ local function fresh_pair(s)
   return missing_princess(s, s.a)
 end
 
--- Rule 5: the working princess with the parent drone that completes the mutation pair.
+-- Rule 5: a princess with the parent drone that completes the mutation pair.
 local function working_pair(s, slot, bee)
   local wanted = {}
   if carries(bee, s.a) then wanted[#wanted + 1] = s.b end
@@ -161,64 +183,91 @@ local function working_pair(s, slot, bee)
       if step then return step end
     end
   end
-  return nil -- try a fresh princess instead
+  return nil
 end
 
--- Rules 5 and 6.
-local function mutate(s, p)
-  if p.working then
-    local bee = s.carry[p.working]
+-- Rules 5 and 6. `princess` is the carried princess to mutate with, if any.
+local function mutate(s, slot)
+  if slot then
+    local bee = s.carry[slot]
     if carries(bee, s.a) or carries(bee, s.b) then
-      local step = working_pair(s, p.working, bee)
+      local step = working_pair(s, slot, bee)
       if step then return step end
     end
   end
   return fresh_pair(s)
 end
 
+-- The best drone carrying C for a princess that is not pure C, or nil.
+-- Pure C drones respect DroneSafetyMode (the last one only goes with a pure C princess).
+local function c_drone(s, p, c_stock)
+  local pure_total = p.c_drone_count + c_stock.pure
+  if pure_total >= 2 or (pure_total == 1 and not s.drone_safety) then
+    if #p.c_drones > 0 then return { slot = p.c_drones[1] }, "pure" end
+    return { species = s.c }, "pure"
+  end
+  if #p.hybrid_drones > 0 then return { slot = p.hybrid_drones[1] }, "hybrid" end
+  if c_stock.carriers > 0 then return { carrier = s.c }, "hybrid" end
+  return nil
+end
+
 function planner.decide(s)
   local p = planner.products(s)
+  local c = s.c
 
   -- 1 target reached
   if #p.pure_princesses > 0 and p.c_drone_count >= s.need_drones then
     return { action = "deliver", princess = p.pure_princesses[1], drones = p.c_drones }
   end
 
-  local c_stock = s.stock("drone", s.c)
+  local c_stock = s.stock("drone", c)
 
-  -- 2 more pure C drones from a pure C pair (no mutation possible)
+  -- 2 a pure C princess
   if #p.pure_princesses > 0 then
+    local princess = { slot = p.pure_princesses[1] }
     if #p.c_drones > 0 then
-      return { action = "cross", princess = { slot = p.pure_princesses[1] }, drone = { slot = p.c_drones[1] },
-               note = "pure " .. s.c .. " pair for more drones" }
+      return { action = "cross", princess = princess, drone = { slot = p.c_drones[1] },
+               note = "pure " .. c .. " pair for more drones" }
     end
     if c_stock.pure > 0 then
-      return { action = "cross", princess = { slot = p.pure_princesses[1] }, drone = { species = s.c },
-               note = "pure " .. s.c .. " pair with a drone from stock" }
+      return { action = "cross", princess = princess, drone = { species = c },
+               note = "pure " .. c .. " pair with a drone from stock" }
     end
-    if c_stock.unknown > 0 then return { action = "analyze", kind = "drone", species = s.c } end
-    -- 3 keep the pure C princess, mutate with another princess until a pure C drone comes
-    return mutate(s, p)
+    if c_stock.unknown > 0 then return { action = "analyze", kind = "drone", species = c } end
+    local drone = (#p.hybrid_drones > 0) and { slot = p.hybrid_drones[1] }
+      or (c_stock.carriers > 0 and { carrier = c }) or nil
+    if drone then
+      return { action = "cross", princess = princess, drone = drone,
+               note = "pure " .. c .. " princess with a " .. c .. " hybrid drone" }
+    end
+    return mutate(s, p.c_princess or p.working)
   end
 
-  -- 4 recovery: pure C drones but no pure C princess
-  local c_available = p.c_drone_count + c_stock.pure
-  if c_available >= (s.drone_safety and 2 or 1) then
-    local drone = (#p.c_drones > 0) and { slot = p.c_drones[1] } or { species = s.c }
+  -- 3 and 4: cross with a drone carrying C
+  local drone, drone_kind = c_drone(s, p, c_stock)
+  if drone then
+    if p.c_princess then
+      return { action = "cross", princess = { slot = p.c_princess }, drone = drone,
+               note = c .. " carriers together (" .. drone_kind .. " drone)" }
+    end
+    if s.stock("princess", c).carriers > 0 then
+      return { action = "cross", princess = { carrier = c }, drone = drone,
+               note = c .. " carriers together, princess from stock" }
+    end
     if p.working then
       return { action = "cross", princess = { slot = p.working }, drone = drone,
-               note = "breeding back to pure " .. s.c }
+               note = "bringing " .. c .. " into the working princess" }
     end
     for _, species in ipairs({ s.a, s.b }) do
       if princess_status(s, species) == "ok" then
         return { action = "cross", princess = { species = species }, drone = drone,
-                 note = "breeding a fresh " .. species .. " princess towards " .. s.c }
+                 note = "bringing " .. c .. " into a fresh " .. species .. " princess" }
       end
     end
   end
 
-  -- 5 and 6 mutation
-  return mutate(s, p)
+  -- a princess carrying C but no drone carrying C: she can still mutate
+  return mutate(s, p.c_princess or p.working)
 end
 
 return planner

@@ -41,6 +41,7 @@ local FILES = {
   "server/tasks/diag.lua",
   "server/tasks/request.lua",
   "server/tasks/run.lua",
+  "server/tasks/scanall.lua",
   "server/tasks/setup.lua",
   "shared/bees.lua",
   "shared/grid.lua",

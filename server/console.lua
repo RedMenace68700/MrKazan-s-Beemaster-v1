@@ -19,7 +19,7 @@ console.PROMPT = "Please input your desired requests (e.g. Clay + Diligent = Tin
 
 local ACTIONS = {
   go = true, pause = true, stop = true, status = true, setup = true,
-  inventorysetup = true, selftest = true, cycle = true, dump = true, quit = true,
+  inventorysetup = true, scanall = true, selftest = true, cycle = true, dump = true, quit = true,
 }
 
 local function show_queue(ctx)

@@ -23,6 +23,7 @@ local terminal = require("server.terminal")
 local setup_task = require("server.tasks.setup")
 local cycle_task = require("server.tasks.cycle")
 local run_task = require("server.tasks.run")
+local scanall_task = require("server.tasks.scanall")
 local diag = require("server.tasks.diag")
 local breeding = require("server.tasks.breeding")
 
@@ -286,6 +287,8 @@ function main.run(root, data)
       start("setup", setup_task.run, ctx, {})
     elseif action == "inventorysetup" then
       start("inventorysetup", setup_task.run, ctx, { scan = true })
+    elseif action == "scanall" then
+      start("scanall", scanall_task.run, ctx)
     elseif action == "cycle" then
       local princess = chest_slot(result.args[1], result.args[2])
       local drone = chest_slot(result.args[3], result.args[4])

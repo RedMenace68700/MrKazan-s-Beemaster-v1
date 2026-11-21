@@ -38,7 +38,9 @@ local function stock_counter(ctx)
     local base = { kind = kind, species = species, natural = natural }
     local pure = { kind = kind, species = species, natural = natural, pure = true }
     local unread = { kind = kind, species = species, natural = natural, analyzed = false }
-    local result = { pure = ledger:count(pure, order), unknown = ledger:count(unread, order), providers = 0 }
+    local carrier = { kind = kind, carries = species, natural = natural, not_pure = true }
+    local result = { pure = ledger:count(pure, order), unknown = ledger:count(unread, order),
+                     carriers = ledger:count(carrier, order), providers = 0 }
     if quest then result.providers = ledger:count(pure, ctx.state.layout.providers) end
     result.any = ledger:count(base, order)
     return result
@@ -55,33 +57,52 @@ local function products(ctx)
   return carry
 end
 
--- A bee for a cross: a carried one (exactly one drone) or a pure one from stock.
--- Returns the robot slot, or nil plus an error object (nil error: the inventory was out
--- of date, plan again).
+-- A bee for a cross: a carried one (exactly one drone), a pure one from stock, or one
+-- from stock that carries a species but is not known pure. Returns the robot slot, or
+-- nil plus an error object (nil error: the inventory was out of date, plan again).
 local function acquire(ctx, source, kind)
   if source.slot then
     local bee = ctx.state.carry[source.slot]
     if kind == "drone" and bee.size > 1 then return breeding.split(ctx, source.slot, 1) end
     return source.slot
   end
-  local filter = { kind = kind, species = source.species, pure = true, natural = natural_only(ctx) }
+  local filter
+  if source.carrier then
+    filter = { kind = kind, carries = source.carrier, not_pure = true, natural = natural_only(ctx) }
+  else
+    filter = { kind = kind, species = source.species, pure = true, natural = natural_only(ctx) }
+  end
   return breeding.take(ctx, filter, source_order(ctx), 1)
 end
 
+-- Drone stacks carrying C (not pure) kept in the robot at most; more go into the chests.
+local MAX_HYBRID_DRONES = 6
+
 -- After a cross: keep the request's products in the robot, store everything else.
--- Kept: pure C princesses, the newest other princess (next working princess), pure C drones.
+-- Kept: pure C princesses, the newest princess (the next one to work with), pure C drones
+-- and up to MAX_HYBRID_DRONES drone stacks carrying C.
 local function sort_out(ctx, entry, offspring)
   local newest
   for _, slot in ipairs(offspring) do
     local bee = ctx.state.carry[slot]
     if bee and bee.kind == "princess" then newest = slot end
   end
-  local store = {}
+  local store, hybrids = {}, {}
   for slot, bee in pairs(products(ctx)) do
     local pure_c = bees.purity(bee) == true and bees.same_species(bee.species, entry.c)
-    local keep = (bee.kind == "princess" and (pure_c or slot == newest)) or (bee.kind == "drone" and pure_c)
-    if not keep then store[#store + 1] = slot end
+    local carries_c = bees.same_species(bee.species, entry.c) or bees.same_species(bee.inactive, entry.c)
+    if bee.kind == "princess" then
+      if not (pure_c or slot == newest) then store[#store + 1] = slot end
+    elseif bee.kind == "drone" and pure_c then
+      -- keep
+    elseif bee.kind == "drone" and carries_c then
+      hybrids[#hybrids + 1] = slot
+    else
+      store[#store + 1] = slot
+    end
   end
+  table.sort(hybrids)
+  for i = MAX_HYBRID_DRONES + 1, #hybrids do store[#store + 1] = hybrids[i] end
   return breeding.store_slots(ctx, store)
 end
 

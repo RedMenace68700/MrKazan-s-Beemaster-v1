@@ -20,7 +20,8 @@ function ledger.new(state)
 end
 
 -- filter fields (all optional):
---   name, kind ("princess"/"drone"/"queen"), species,
+--   name, kind ("princess"/"drone"/"queen"), species (active species),
+--   carries (active or, if analyzed, inactive species), not_pure (anything but known pure),
 --   pure (true = known pure, false = known hybrid), natural (true = isNatural required),
 --   analyzed (true/false)
 function ledger.matches(summary, filter)
@@ -28,6 +29,9 @@ function ledger.matches(summary, filter)
   if filter.name and summary.name ~= filter.name then return false end
   if filter.kind and summary.kind ~= filter.kind then return false end
   if filter.species and not bees.same_species(summary.species, filter.species) then return false end
+  if filter.carries and not (bees.same_species(summary.species, filter.carries)
+    or bees.same_species(summary.inactive, filter.carries)) then return false end
+  if filter.not_pure and bees.purity(summary) == true then return false end
   if filter.pure ~= nil and bees.purity(summary) ~= filter.pure then return false end
   if filter.natural and summary.natural ~= true then return false end
   if filter.analyzed ~= nil and summary.analyzed ~= filter.analyzed then return false end
