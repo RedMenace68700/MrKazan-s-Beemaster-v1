@@ -1,0 +1,2 @@
+# OpenComputers downloads files as they are stored; keep plain LF line endings.
+* text=auto eol=lf
