@@ -77,7 +77,10 @@ local function explain_setting(ctx, key)
 end
 
 local function show_help()
-  local lines = { string.format("%-15s %s", "A + B = C", "Add a request, e.g. clay + diligent = tin") }
+  local lines = {
+    string.format("%-15s %s", "A + B = C", "Add a request, e.g. clay + diligent = tin"),
+    string.format("%-15s %s", "= C X", "Breed a pure C pair X times, e.g. = iron 5"),
+  }
   for _, command in ipairs(parser.COMMANDS) do
     lines[#lines + 1] = string.format("%-15s %s", command.name, command.help)
   end

@@ -188,7 +188,126 @@ end
 
 local MISSING = { MISSING_PRINCESS = true, MISSING_DRONE = true, DRONE_SAFETY = true, QUEST_LAST_PRINCESS = true }
 
+-- Robot slots of the carried pure C princesses and pure C drones.
+local function pure_slots(ctx, c)
+  local princesses, drones = {}, {}
+  for slot, bee in pairs(products(ctx)) do
+    if bees.purity(bee) == true and bees.same_species(bee.species, c) then
+      if bee.kind == "princess" then
+        princesses[#princesses + 1] = slot
+      elseif bee.kind == "drone" then
+        drones[#drones + 1] = slot
+      end
+    end
+  end
+  table.sort(princesses)
+  table.sort(drones)
+  return princesses, drones
+end
+
+local function free_robot_slots(ctx)
+  local free = 0
+  local honey = breeding.honey_slot(ctx)
+  for slot = 1, ctx.state.robot_size or 16 do
+    if slot ~= honey and ctx.state.carry[slot] == nil then free = free + 1 end
+  end
+  return free
+end
+
+-- A pure C bee for a multiply cycle: a carried one, else one from stock (unread ones are
+-- looked at first). Returns the robot slot, or nil plus an error object.
+local function pure_bee(ctx, c, kind, carried)
+  if carried then return acquire(ctx, { slot = carried }, kind) end
+  local count = stock_counter(ctx)
+  for _ = 1, ANALYZE_LIMIT do
+    local st = count(kind, c)
+    if st.pure > 0 then
+      local slot, err = acquire(ctx, { species = c }, kind)
+      if slot or err then return slot, err end
+    elseif st.unknown > 0 then
+      local ok, err = analyze_candidate(ctx, { kind = kind, species = c })
+      if not ok then return nil, err end
+    else
+      return nil, errors.new(kind == "princess" and "MISSING_PRINCESS" or "MISSING_DRONE", c)
+    end
+  end
+  return nil, errors.new(kind == "princess" and "MISSING_PRINCESS" or "MISSING_DRONE", c)
+end
+
+-- "= C X": breeds a pure C princess with a pure C drone X times. Each cycle uses the new
+-- princess and one of the new drones. At the end the princess and all pure C drones go
+-- into the provider chests. DroneSafetyMode does not apply: the pair is pure C x pure C.
+local function multiply(ctx, entry)
+  local c, name = entry.c, queue.describe(entry)
+  local order = layout.deliver_order(ctx.state.layout)
+  local ok, err = breeding.ensure_honey(ctx, 1)
+  if not ok then return { status = "halt", error = err } end
+
+  for cycle = 1, entry.count do
+    if ctx.stopping() then return { status = "stopped" } end
+    ok, err = breeding.charge(ctx)
+    if not ok then return { status = "halt", error = err } end
+    ctx.state.progress = { request = "#" .. entry.id .. " " .. name, cycle = cycle, max = entry.count,
+                           note = "pure " .. c .. " pair" }
+    ctx.log:info(string.format("= %s: cycle %d of %d", c, cycle, entry.count))
+
+    local princesses, drones = pure_slots(ctx, c)
+    local princess, drone
+    princess, err = pure_bee(ctx, c, "princess", princesses[1])
+    if not princess then
+      return { status = MISSING[err.code] and "missing" or "halt", error = err }
+    end
+    drone, err = pure_bee(ctx, c, "drone", drones[1])
+    if not drone then
+      if not princesses[1] then
+        local stored, store_err = breeding.store_slots(ctx, { princess })
+        if not stored then return { status = "halt", error = store_err } end
+      end
+      return { status = MISSING[err.code] and "missing" or "halt", error = err }
+    end
+    ctx.log:info("  " .. bees.describe(ctx.state.carry[princess]) .. " x " .. bees.describe(ctx.state.carry[drone]))
+
+    local offspring
+    offspring, err = breeding.cross(ctx, princess, drone)
+    if not offspring then
+      return { status = err.code == "CYCLE_TIMEOUT" and "failed" or "halt", error = err }
+    end
+    local names = {}
+    for _, slot in ipairs(offspring) do names[#names + 1] = bees.describe(ctx.state.carry[slot]) end
+    ctx.log:info("  offspring: " .. table.concat(names, ", "))
+
+    -- keep the pure C bees, store anything else
+    local store = {}
+    for slot, bee in pairs(products(ctx)) do
+      if not (bees.purity(bee) == true and bees.same_species(bee.species, c)) then store[#store + 1] = slot end
+    end
+    ok, err = breeding.store_slots(ctx, store)
+    if not ok then return { status = "halt", error = err } end
+
+    -- the robot fills up: hand the drones over early, keep one for the next cycle
+    if free_robot_slots(ctx) < 3 then
+      local _, carried = pure_slots(ctx, c)
+      for i = 2, #carried do
+        ok, err = breeding.store(ctx, carried[i], order, "PROVIDER_FULL")
+        if not ok then return { status = "halt", error = err } end
+      end
+    end
+  end
+
+  local princesses, drones = pure_slots(ctx, c)
+  for _, slot in ipairs(princesses) do
+    ok, err = breeding.store(ctx, slot, order, "PROVIDER_FULL")
+    if not ok then return { status = "halt", error = err } end
+  end
+  for _, slot in ipairs(drones) do
+    ok, err = breeding.store(ctx, slot, order, "PROVIDER_FULL")
+    if not ok then return { status = "halt", error = err } end
+  end
+  return { status = "done", cycles = entry.count }
+end
+
 function request.run(ctx, entry)
+  if entry.count then return multiply(ctx, entry) end
   local settings = ctx.settings
   local need = settings:get("ResultMode") == "extra_spares" and settings:get("SpareDrones") or 1
   local max_cycles = settings:get("MaxCyclesPerRequest")

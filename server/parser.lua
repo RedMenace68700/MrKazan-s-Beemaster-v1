@@ -3,6 +3,7 @@
 -- Results:
 --   { kind = "empty" }
 --   { kind = "request", a = "Clay", b = "Diligent", c = "Tin" }
+--   { kind = "request", c = "Iron", count = 5 }               (typed as "= iron 5")
 --   { kind = "command", name = "set", args = { "ResultMode", "extra_spares" } }
 --   { kind = "error", code = "INPUT_FORMAT", msg = "[INPUT_FORMAT] ..." }
 
@@ -45,6 +46,22 @@ local function fail(code, ...)
   return { kind = "error", code = err.code, msg = err.msg }
 end
 
+parser.MAX_MULTIPLY = 1000
+
+-- "= Iron 5": breed a pure Iron pair 5 times (count defaults to 1).
+local function parse_multiply(line, registry)
+  local rest = trim(line:sub(2))
+  local name, count_text = rest:match("^(.-)%s+(%d+)$")
+  if not name then name = rest end
+  name = trim(name)
+  if name == "" or name:find("[+=]") then return fail("INPUT_FORMAT", line) end
+  local species = registry:lookup(name)
+  if not species then return fail("INPUT_UNKNOWN_SPECIES", name) end
+  local count = tonumber(count_text or "1")
+  if count < 1 or count > parser.MAX_MULTIPLY then return fail("INPUT_COUNT", parser.MAX_MULTIPLY) end
+  return { kind = "request", c = species, count = count }
+end
+
 local function parse_request(line, registry)
   local left, right = line:match("^([^=]*)=([^=]*)$")
   if not left then return fail("INPUT_FORMAT", line) end
@@ -67,6 +84,7 @@ end
 function parser.parse(line, registry)
   line = trim(line or "")
   if line == "" then return { kind = "empty" } end
+  if line:sub(1, 1) == "=" then return parse_multiply(line, registry) end
   if line:find("[+=]") then return parse_request(line, registry) end
 
   local words = {}

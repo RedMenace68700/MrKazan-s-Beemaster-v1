@@ -5,11 +5,12 @@ local errors = {}
 
 errors.CODES = {
   -- terminal input
-  INPUT_FORMAT = "Cannot read '%s' (expected: A + B = C)",
+  INPUT_FORMAT = "Cannot read '%s' (expected: A + B = C or = C X)",
   INPUT_UNKNOWN_SPECIES = "Unknown species '%s' (not listed in species.txt)",
   INPUT_TARGET_IS_PARENT = "Target '%s' cannot also be a parent",
   INPUT_UNKNOWN_COMMAND = "Unknown command '%s' (type 'help')",
   INPUT_USAGE = "Usage: %s",
+  INPUT_COUNT = "The number of cycles must be between 1 and %s",
   SETTING_UNKNOWN = "Unknown setting '%s' (type 'settings')",
   SETTING_BAD_VALUE = "Invalid value '%s' for %s (allowed: %s)",
   QUEUE_BUSY = "Cannot %s while the robot is busy",
