@@ -67,7 +67,9 @@ local function acquire(ctx, source, kind)
     return source.slot
   end
   local filter
-  if source.carrier then
+  if source.basic then
+    filter = { kind = kind, all_in = ctx.basic, natural = natural_only(ctx) }
+  elseif source.carrier then
     filter = { kind = kind, carries = source.carrier, not_pure = true, natural = natural_only(ctx) }
   else
     filter = { kind = kind, species = source.species, pure = true, natural = natural_only(ctx) }
@@ -109,6 +111,9 @@ end
 -- Looks at one unanalyzed candidate in stock and puts it back where it was.
 local function analyze_candidate(ctx, step)
   local filter = { kind = step.kind, species = step.species, analyzed = false, natural = natural_only(ctx) }
+  if step.basic then
+    filter = { kind = step.kind, species_in = ctx.basic, analyzed = false, natural = natural_only(ctx) }
+  end
   local hit = ctx.state.ledger:find(filter, source_order(ctx))[1]
   if not hit then return true end
   local count = step.kind == "drone" and hit.bee.size or 1
@@ -186,7 +191,25 @@ local function cross(ctx, entry, step)
   return sort_out(ctx, entry, offspring)
 end
 
-local MISSING = { MISSING_PRINCESS = true, MISSING_DRONE = true, DRONE_SAFETY = true, QUEST_LAST_PRINCESS = true }
+local MISSING = { MISSING_PRINCESS = true, MISSING_DRONE = true, DRONE_SAFETY = true, QUEST_LAST_PRINCESS = true,
+                  BASIC_PRINCESS_MISSING = true }
+
+-- Princesses made only of basic species, for "upgrade C".
+local function basic_stock(ctx)
+  local ledger, order, natural = ctx.state.ledger, source_order(ctx), natural_only(ctx)
+  return {
+    ready = ledger:count({ kind = "princess", all_in = ctx.basic, natural = natural }, order),
+    unknown = ledger:count({ kind = "princess", species_in = ctx.basic, analyzed = false, natural = natural }, order),
+  }
+end
+
+-- "forest, meadows, ..." for messages
+local function basic_names(ctx)
+  local names = {}
+  for name in pairs(ctx.basic) do names[#names + 1] = name end
+  table.sort(names)
+  return table.concat(names, ", ")
+end
 
 -- Robot slots of the carried pure C princesses and pure C drones.
 local function pure_slots(ctx, c)
@@ -323,7 +346,10 @@ function request.run(ctx, entry)
     ok, err = breeding.charge(ctx)
     if not ok then return { status = "halt", error = err } end
 
-    local step = planner.decide({
+    local decide = entry.upgrade and planner.decide_upgrade or planner.decide
+    local step = decide({
+      basic = entry.upgrade and basic_stock(ctx),
+      basic_names = entry.upgrade and basic_names(ctx),
       a = entry.a, b = entry.b, c = entry.c,
       carry = products(ctx),
       stock = stock_counter(ctx),

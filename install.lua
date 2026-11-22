@@ -16,6 +16,7 @@ local FILES = {
   "bin/beemasterv1.lua",
   "robot/loader.lua",
   "robot/main.lua",
+  "server/basic.txt",
   "server/bundle.lua",
   "server/config.lua",
   "server/console.lua",
@@ -50,7 +51,7 @@ local FILES = {
 }
 
 -- Files the player edits: only installed when they do not exist yet.
-local KEEP = { ["server/species.txt"] = true }
+local KEEP = { ["server/species.txt"] = true, ["server/basic.txt"] = true }
 
 if not component.isAvailable("internet") then
   io.stderr:write("beemasterv1 needs an internet card to install.\n")

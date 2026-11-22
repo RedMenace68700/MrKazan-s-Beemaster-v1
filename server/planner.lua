@@ -301,4 +301,59 @@ function planner.decide(s)
   return mutate(s, p.c_princess or p.working)
 end
 
+-- "upgrade C": a pure C princess (plus 1 or SpareDrones pure C drones) from a basic
+-- princess and the player's pure C drones, without any mutation:
+--   basic princess x pure C drone -> X/C princess,  X/C x pure C -> half pure C, ...
+-- Extra snapshot field: basic = { ready = n, unknown = n } princesses made only of basic
+-- species (analyzed), and unread princesses whose active species is basic.
+-- Steps as in decide(), plus princess source { basic = true }.
+function planner.decide_upgrade(s)
+  local p = planner.products(s)
+  local c = s.c
+
+  if #p.pure_princesses > 0 and p.c_drone_count >= s.need_drones then
+    return { action = "deliver", princess = p.pure_princesses[1], drones = p.c_drones }
+  end
+
+  local c_stock = s.stock("drone", c)
+
+  -- a pure C princess already: more pure C drones
+  if #p.pure_princesses > 0 then
+    local princess = { slot = p.pure_princesses[1] }
+    if #p.c_drones > 0 then
+      return { action = "cross", princess = princess, drone = { slot = p.c_drones[1] },
+               note = "pure " .. c .. " pair for more drones" }
+    end
+    if c_stock.pure > 0 then
+      return { action = "cross", princess = princess, drone = { species = c },
+               note = "pure " .. c .. " pair with a drone from stock" }
+    end
+    if c_stock.unknown > 0 then return { action = "analyze", kind = "drone", species = c } end
+    local drone = (#p.hybrid_drones > 0) and { slot = p.hybrid_drones[1] }
+      or (c_stock.carriers > 0 and { carrier = c }) or nil
+    if drone then
+      return { action = "cross", princess = princess, drone = drone,
+               note = "pure " .. c .. " princess with a " .. c .. " hybrid drone" }
+    end
+    return { action = "fail", code = "MISSING_DRONE", species = c }
+  end
+
+  local drone, drone_kind = c_drone(s, p, c_stock)
+  if not drone then
+    if c_stock.unknown > 0 then return { action = "analyze", kind = "drone", species = c } end
+    local pure_total = p.c_drone_count + c_stock.pure
+    return { action = "fail", code = pure_total == 1 and "DRONE_SAFETY" or "MISSING_DRONE", species = c }
+  end
+  if p.c_princess then
+    return { action = "cross", princess = { slot = p.c_princess }, drone = drone,
+             note = "breeding towards pure " .. c .. " (" .. drone_kind .. " drone)" }
+  end
+  if s.basic.ready > 0 then
+    return { action = "cross", princess = { basic = true }, drone = drone,
+             note = "bringing " .. c .. " into a basic princess" }
+  end
+  if s.basic.unknown > 0 then return { action = "analyze", kind = "princess", basic = true } end
+  return { action = "fail", code = "BASIC_PRINCESS_MISSING", species = s.basic_names }
+end
+
 return planner

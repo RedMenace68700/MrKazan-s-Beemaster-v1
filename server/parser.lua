@@ -4,6 +4,7 @@
 --   { kind = "empty" }
 --   { kind = "request", a = "Clay", b = "Diligent", c = "Tin" }
 --   { kind = "request", c = "Iron", count = 5 }               (typed as "= iron 5")
+--   { kind = "request", c = "Iron", upgrade = true }          ("upgrade iron", "upgrade to iron")
 --   { kind = "command", name = "set", args = { "ResultMode", "extra_spares" } }
 --   { kind = "error", code = "INPUT_FORMAT", msg = "[INPUT_FORMAT] ..." }
 
@@ -62,6 +63,20 @@ local function parse_multiply(line, registry)
   return { kind = "request", c = species, count = count }
 end
 
+-- "upgrade Iron" or "upgrade to Iron": a pure Iron princess from a basic princess.
+local function parse_upgrade(line, registry)
+  local rest = trim(line:sub(8))
+  local after_to = rest:match("^[Tt][Oo]%s+(.+)$")
+  local name = after_to or rest
+  if name == "" or name:lower() == "to" then
+    return fail("INPUT_USAGE", "upgrade <species> or upgrade to <species>")
+  end
+  -- a species really called "to ..." still works when typed without "to"
+  local species = registry:lookup(name) or (after_to and registry:lookup(rest))
+  if not species then return fail("INPUT_UNKNOWN_SPECIES", name) end
+  return { kind = "request", c = species, upgrade = true }
+end
+
 local function parse_request(line, registry)
   local left, right = line:match("^([^=]*)=([^=]*)$")
   if not left then return fail("INPUT_FORMAT", line) end
@@ -89,6 +104,7 @@ function parser.parse(line, registry)
 
   local words = {}
   for word in line:gmatch("%S+") do words[#words + 1] = word end
+  if words[1]:lower() == "upgrade" then return parse_upgrade(line, registry) end
   local command = COMMAND_BY_NAME[words[1]:lower()]
   if not command then return fail("INPUT_UNKNOWN_COMMAND", words[1]) end
   local args = { table.unpack(words, 2) }

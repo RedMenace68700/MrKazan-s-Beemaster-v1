@@ -25,6 +25,7 @@ errors.CODES = {
   MISSING_DRONE = "No usable pure %s drone",
   DRONE_SAFETY = "DroneSafetyMode protects the last pure %s drone",
   QUEST_LAST_PRINCESS = "QuestMode prohibits using up the last %s princess",
+  BASIC_PRINCESS_MISSING = "No princess made only of basic bees (%s)",
   MAX_CYCLES = "Target not reached after %s cycles",
   CYCLE_TIMEOUT = "No princess in the output chest after %s s",
   HONEY_LOW = "Only %s honey drops left (MinHoney is %s)",

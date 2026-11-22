@@ -65,6 +65,11 @@ function main.run(root, data)
     io.stderr:write("Cannot read species.txt: " .. tostring(species_err) .. "\n")
     return 1
   end
+  -- basic species for "upgrade": server/basic.txt, same format as species.txt
+  local basic = {}
+  local basic_list = species.load(root .. "/server/basic.txt")
+    or species.from_list({ "forest", "meadows", "modest", "common" })
+  for _, name in ipairs(basic_list.names) do basic[name:lower()] = true end
 
   data = data or (root .. "/data")
   filesystem.makeDirectory(data)
@@ -150,6 +155,7 @@ function main.run(root, data)
     state = state,
     settings = settings,
     config = cfg,
+    basic = basic,
     queue = queue,
     save = save,
     clock = os.time,
