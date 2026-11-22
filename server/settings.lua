@@ -59,7 +59,7 @@ end
 
 function settings.allowed_text(def)
   if def.type == "enum" then return table.concat(def.values, ", ") end
-  if def.type == "int" then return def.min .. "-" .. def.max end
+  if def.type == "int" then return def.min .. " to " .. def.max end
   return "on, off"
 end
 
@@ -113,7 +113,8 @@ end
 function Settings:entries()
   local list = {}
   for _, def in ipairs(settings.DEFINITIONS) do
-    list[#list + 1] = { key = def.key, value = self.values[def.key], default = def.default, help = def.help }
+    list[#list + 1] = { key = def.key, value = self.values[def.key], default = def.default, help = def.help,
+                        definition = def }
   end
   return list
 end
